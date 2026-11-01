@@ -2,7 +2,7 @@
   "name": "CSM DRIVE | ULTRA PRO",
   "short_name": "CSM Drive",
   "description": "Secure Cloud File Manager by Csm Mohasin Alam",
-  "start_url": "./index.html",
+  "start_url": "/index.html",
   "display": "standalone",
   "orientation": "portrait-primary",
   "background_color": "#030308",
@@ -26,7 +26,7 @@
     {
       "name": "Upload Files",
       "short_name": "Upload",
-      "url": "./index.html#upload",
+      "url": "/index.html#upload",
       "icons": [{ "src": "https://placehold.co/96x96/00ffcc/000000?text=UP", "sizes": "96x96" }]
     }
   ]

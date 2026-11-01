@@ -140,6 +140,9 @@
             <div id="syncStatusBadge" class="sync-badge" title="Sync Status">
                 <i class="fas fa-check-circle"></i> <span>SYNCED</span>
             </div>
+            <a href="web-control.html" class="hdr-btn" title="Web Control Center" style="display:inline-flex;align-items:center;justify-content:center;text-decoration:none;">
+                <i class="fas fa-sliders"></i>
+            </a>
             <button class="hdr-btn" id="settingsBtn" onclick="window.openSettings()" title="Settings">
                 <i class="fas fa-gear"></i>
             </button>
@@ -459,7 +462,7 @@
 <script>
 if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
-        navigator.serviceWorker.register('./sw.js')
+        navigator.serviceWorker.register('/sw.js')
             .then(r => console.log('[SW] Registered', r.scope))
             .catch(e => console.warn('[SW] Failed', e));
     });

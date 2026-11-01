@@ -1,0 +1,677 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+    <meta name="description" content="CSM DRIVE ULTRA PRO — Standalone Web Control Center">
+    <meta name="theme-color" content="#00ffcc">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="CSM Control">
+    <link rel="manifest" href="manifest.json">
+    <title>CSM DRIVE | Web Control Center</title>
+
+    <!-- FontAwesome -->
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=JetBrains+Mono:wght@300;400;500;600&family=Orbitron:wght@400;600;700;900&display=swap" rel="stylesheet">
+    <!-- App CSS -->
+    <link rel="stylesheet" href="style.css">
+
+    <style>
+        /* Dedicated Web Control Center Styles */
+        .control-nav-bar {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            background: rgba(10, 10, 24, 0.7);
+            border-bottom: 1px solid var(--border2);
+            padding: 10px 20px;
+            overflow-x: auto;
+        }
+        .control-nav-link {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 8px 14px;
+            border-radius: 8px;
+            font-size: 0.75rem;
+            font-family: var(--font-mono);
+            color: var(--text-muted);
+            border: 1px solid var(--border2);
+            background: rgba(255, 255, 255, 0.03);
+            text-decoration: none;
+            transition: var(--transition);
+            white-space: nowrap;
+        }
+        .control-nav-link:hover, .control-nav-link.active {
+            color: var(--neon);
+            border-color: rgba(0, 255, 204, 0.35);
+            background: rgba(0, 255, 204, 0.08);
+        }
+        .control-grid-layout {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 20px;
+            padding: 20px;
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+        @media (min-width: 992px) {
+            .control-grid-layout {
+                grid-template-columns: 1.2fr 1fr;
+            }
+            .control-grid-full {
+                grid-column: 1 / -1;
+            }
+        }
+        .control-card {
+            background: var(--surface);
+            border: 1px solid var(--border2);
+            border-radius: var(--radius-lg);
+            padding: 20px;
+            box-shadow: 0 4px 24px rgba(0,0,0,0.4);
+            position: relative;
+        }
+        .control-card:hover {
+            border-color: var(--border);
+        }
+        .control-card-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 16px;
+            padding-bottom: 12px;
+            border-bottom: 1px solid var(--border2);
+        }
+        .control-card-title {
+            font-family: var(--font-display);
+            font-size: 0.85rem;
+            letter-spacing: 2px;
+            color: var(--neon);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .device-telemetry-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-size: 0.65rem;
+            font-family: var(--font-mono);
+            background: rgba(0, 255, 136, 0.1);
+            color: var(--success);
+            border: 1px solid rgba(0, 255, 136, 0.25);
+        }
+        .device-telemetry-badge.warn {
+            background: rgba(255, 170, 0, 0.1);
+            color: var(--warning);
+            border-color: rgba(255, 170, 0, 0.25);
+        }
+        .preset-badge-item {
+            background: var(--surface2);
+            border: 1px solid var(--border2);
+            border-radius: 10px;
+            padding: 12px 14px;
+            margin-bottom: 8px;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+        .preset-badge-top {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .preset-name {
+            font-weight: 600;
+            font-size: 0.8rem;
+            color: var(--text);
+        }
+        .preset-meta {
+            font-size: 0.68rem;
+            color: var(--text-muted);
+            font-family: var(--font-mono);
+        }
+        .log-terminal {
+            background: #04040a;
+            border: 1px solid rgba(0, 255, 204, 0.15);
+            border-radius: 10px;
+            padding: 14px;
+            font-family: var(--font-mono);
+            font-size: 0.7rem;
+            max-height: 280px;
+            overflow-y: auto;
+            color: #b0b0c8;
+            line-height: 1.6;
+        }
+        .log-row {
+            display: flex;
+            gap: 10px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+            padding: 4px 0;
+        }
+        .log-time { color: var(--text-dim); }
+        .log-tag-success { color: var(--success); font-weight: bold; }
+        .log-tag-skip { color: var(--warning); font-weight: bold; }
+        .log-tag-error { color: var(--danger); font-weight: bold; }
+        .log-msg { color: var(--text); flex: 1; word-break: break-word; }
+    </style>
+</head>
+<body>
+
+<!-- ── Offline banner ─────────────────────────────────────────── -->
+<div id="offlineBanner" class="offline-banner hidden">
+    <i class="fas fa-wifi-slash"></i>
+    <span>OFFLINE MODE — Showing cached control telemetry. Changes will sync when reconnected.</span>
+    <button onclick="document.getElementById('offlineBanner').classList.add('hidden')">×</button>
+</div>
+
+<!-- ── Particle canvas ───────────────────────────────────────── -->
+<canvas id="particles" class="particles"></canvas>
+
+<!-- ─────────────────────────── LOGIN ────────────────────────── -->
+<div id="loginSection" class="login-section">
+    <div class="login-bg-grid"></div>
+    <div class="login-card" data-aos>
+        <div class="login-logo">
+            <div class="logo-hex">
+                <i class="fas fa-sliders"></i>
+            </div>
+            <div class="logo-text">
+                <span class="logo-main">CSM CONTROL</span>
+                <span class="logo-sub">WEB DASHBOARD</span>
+            </div>
+        </div>
+        <div class="login-dev-tag">Remote Cloud & Device Management by Csm Mohasin Alam</div>
+        <div class="login-fields">
+            <div class="field-wrap">
+                <i class="fas fa-at field-icon"></i>
+                <input type="email" id="loginEmail" placeholder="ACCESS EMAIL" autocomplete="email">
+            </div>
+            <div class="field-wrap">
+                <i class="fas fa-shield-halved field-icon"></i>
+                <input type="password" id="loginPass" placeholder="SECURE KEY" autocomplete="current-password">
+            </div>
+        </div>
+        <button id="doLogin" class="login-btn">
+            <span class="btn-idle"><i class="fas fa-fingerprint"></i>&nbsp; AUTHENTICATE</span>
+            <span class="btn-loading hidden"><i class="fas fa-spinner fa-spin"></i>&nbsp; PROCESSING…</span>
+        </button>
+        <div class="login-footer">
+            <span class="lf-item"><i class="fas fa-lock"></i> End-to-End AES</span>
+            <span class="lf-item"><i class="fas fa-server"></i> Cloudflare Worker</span>
+            <span class="lf-item"><i class="fas fa-cloud"></i> Firebase RTDB</span>
+        </div>
+    </div>
+</div>
+
+<!-- ─────────────────────── PASSCODE / PATTERN ───────────────── -->
+<div id="passcodeSection" class="passcode-section hidden">
+    <div class="pc-card" data-aos>
+        <div class="pc-icon"><i class="fas fa-shield-halved"></i></div>
+        <div class="pc-title">ACCESS CONTROL</div>
+        <div id="passcodeMessage" class="pc-msg">Enter your 4-digit access code</div>
+        <div id="pcNumericMode">
+            <div id="passcodeDots" class="pc-dots">
+                <div class="passcode-dot"></div>
+                <div class="passcode-dot"></div>
+                <div class="passcode-dot"></div>
+                <div class="passcode-dot"></div>
+            </div>
+            <div class="pc-pad">
+                <button class="pc-key" onclick="window.enterPasscode('1')">1</button>
+                <button class="pc-key" onclick="window.enterPasscode('2')">2</button>
+                <button class="pc-key" onclick="window.enterPasscode('3')">3</button>
+                <button class="pc-key" onclick="window.enterPasscode('4')">4</button>
+                <button class="pc-key" onclick="window.enterPasscode('5')">5</button>
+                <button class="pc-key" onclick="window.enterPasscode('6')">6</button>
+                <button class="pc-key" onclick="window.enterPasscode('7')">7</button>
+                <button class="pc-key" onclick="window.enterPasscode('8')">8</button>
+                <button class="pc-key" onclick="window.enterPasscode('9')">9</button>
+                <button class="pc-key pc-cancel" onclick="window.cancelPasscode()">✕</button>
+                <button class="pc-key" onclick="window.enterPasscode('0')">0</button>
+                <button class="pc-key pc-del" onclick="window.clearPasscode()">⌫</button>
+            </div>
+        </div>
+        <div id="pcPatternMode" class="hidden">
+            <svg id="patternSvg" class="pattern-grid" viewBox="0 0 240 240">
+                <g id="patternSvgLines"></g>
+                <circle class="pattern-dot" data-idx="0" cx="40"  cy="40"  r="14"></circle>
+                <circle class="pattern-dot" data-idx="1" cx="120" cy="40"  r="14"></circle>
+                <circle class="pattern-dot" data-idx="2" cx="200" cy="40"  r="14"></circle>
+                <circle class="pattern-dot" data-idx="3" cx="40"  cy="120" r="14"></circle>
+                <circle class="pattern-dot" data-idx="4" cx="120" cy="120" r="14"></circle>
+                <circle class="pattern-dot" data-idx="5" cx="200" cy="120" r="14"></circle>
+                <circle class="pattern-dot" data-idx="6" cx="40"  cy="200" r="14"></circle>
+                <circle class="pattern-dot" data-idx="7" cx="120" cy="200" r="14"></circle>
+                <circle class="pattern-dot" data-idx="8" cx="200" cy="200" r="14"></circle>
+            </svg>
+        </div>
+        <div id="pcAccountPassMode" class="hidden">
+            <div class="acct-pw-wrap">
+                <input type="password" id="acctUnlockInput" class="acct-pw-input" placeholder="Account password" autocomplete="off"
+                    onkeydown="if(event.key==='Enter') window.submitAccountPassword()">
+                <button class="pc-key pc-cancel gesture-btn" onclick="window.submitAccountPassword()">Unlock</button>
+            </div>
+        </div>
+        <div id="pcSwitchLink" class="pc-switch-link hidden" onclick="window.togglePcMode()"></div>
+        <button class="pc-key pc-cancel pc-cancel-standalone hidden" id="pcStandaloneCancel" onclick="window.cancelPasscode()">Cancel</button>
+    </div>
+</div>
+
+<!-- ─────────────────────────── MAIN CONTROL APP ───────────────────────── -->
+<div id="mainContent" class="main-content hidden">
+    <!-- Header -->
+    <header class="app-header" id="appHeader" data-aos>
+        <div class="hdr-left">
+            <div class="hdr-logo">
+                <div class="hdr-hex"><i class="fas fa-sliders"></i></div>
+                <div class="hdr-title-wrap">
+                    <span class="hdr-title">CSM DRIVE</span>
+                    <span class="hdr-ver">WEB CONTROL CENTER</span>
+                </div>
+            </div>
+        </div>
+        <div class="hdr-right">
+            <div id="syncStatusBadge" class="sync-badge" title="Sync Status">
+                <i class="fas fa-check-circle"></i> <span>SYNCED</span>
+            </div>
+            <button class="hdr-btn" id="themeToggleBtn" onclick="window.toggleTheme()" title="Toggle Theme">
+                <i class="fas fa-circle-half-stroke"></i>
+            </button>
+            <button class="hdr-btn" onclick="window.confirmLogout()" title="Sign out">
+                <i class="fas fa-right-from-bracket"></i>
+            </button>
+        </div>
+    </header>
+
+    <!-- Navigation Bar between Gallery, Control Center, and GDrive -->
+    <nav class="control-nav-bar">
+        <a href="index.html" class="control-nav-link">
+            <i class="fas fa-photo-film"></i> Media Gallery
+        </a>
+        <a href="web-control.html" class="control-nav-link active">
+            <i class="fas fa-sliders"></i> Web Control Center
+        </a>
+        <a href="gdrive-admin.html" class="control-nav-link">
+            <i class="fab fa-google-drive"></i> GDrive Admin
+        </a>
+        <a href="#settingsAccountsSection" class="control-nav-link" onclick="window.openSettings('accounts')">
+            <i class="fas fa-cloud"></i> Cloudinary Multi-Accounts
+        </a>
+        <a href="#liveLogsSection" class="control-nav-link">
+            <i class="fas fa-terminal"></i> Activity Terminal
+        </a>
+    </nav>
+
+    <!-- Overview Stats Bar -->
+    <section class="stats-bar" data-aos data-aos-delay="80">
+        <div class="stat-card">
+            <div class="stat-icon"><i class="fas fa-image"></i></div>
+            <div class="stat-info"><span id="imgCount">0</span><span class="stat-label">Images</span></div>
+            <div class="stat-bar-wrap"><div class="stat-bar neon-bar" id="imgBar"></div></div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-icon" style="color:var(--neon2)"><i class="fas fa-video"></i></div>
+            <div class="stat-info"><span id="vidCount">0</span><span class="stat-label">Videos</span></div>
+            <div class="stat-bar-wrap"><div class="stat-bar neon2-bar" id="vidBar"></div></div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-icon" style="color:#7aa2ff"><i class="fas fa-file-lines"></i></div>
+            <div class="stat-info"><span id="fileCount">0</span><span class="stat-label">Files</span></div>
+            <div class="stat-bar-wrap"><div class="stat-bar" id="fileBar" style="background:linear-gradient(90deg,#7aa2ff,#5577cc)"></div></div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-icon" style="color:#ffd700"><i class="fas fa-star"></i></div>
+            <div class="stat-info"><span id="starCount">0</span><span class="stat-label">Starred</span></div>
+            <div class="stat-bar-wrap"><div class="stat-bar gold-bar" id="starBar"></div></div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-icon" style="color:var(--danger)"><i class="fas fa-trash"></i></div>
+            <div class="stat-info"><span id="trashCount">0</span><span class="stat-label">Trashed</span></div>
+            <div class="stat-bar-wrap"><div class="stat-bar danger-bar" id="trashBar"></div></div>
+        </div>
+        <div class="stat-card storage-card">
+            <div class="stat-icon"><i class="fas fa-hard-drive"></i></div>
+            <div class="stat-info stat-storage">
+                <span id="storageText">0 MB / 1024 MB</span>
+                <div class="storage-bar-wrap"><div id="storageFill" class="storage-fill"></div></div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Hidden compat elements required by script.js -->
+    <div class="hidden">
+        <button id="settingsBtn" onclick="window.openSettings()"></button>
+        <span id="cloudAccountsSummary"></span>
+        <div id="folderBar"></div>
+        <input type="text" id="searchInput">
+        <button id="searchClearBtn"></button>
+        <select id="sortSelect"><option value="newest">Newest</option></select>
+        <button id="gridViewBtn"></button>
+        <button id="listViewBtn"></button>
+        <button id="selectModeBtn"></button>
+        <span id="uploadQueueBadge"></span>
+        <div id="trashActions"></div>
+        <div id="multiBar">
+            <span id="selectedCount">0</span>
+            <div id="multiBarActions"></div>
+        </div>
+        <main id="fileGrid"></main>
+    </div>
+
+    <!-- Main Control Grid Layout -->
+    <div class="control-grid-layout">
+        
+        <!-- SECTION 1: Multi-Account Cloudinary Command Center -->
+        <div class="control-card control-grid-full" id="settingsAccountsSection">
+            <div class="control-card-header">
+                <div class="control-card-title">
+                    <i class="fas fa-cloud"></i> CLOUDINARY MULTI-ACCOUNT MANAGER
+                </div>
+                <div class="settings-section-actions">
+                    <button class="settings-mini-btn" onclick="window.syncCloudUsage()" title="Recalculate live usage directly from Cloudinary APIs">
+                        <i class="fas fa-rotate"></i> Recalculate Storage
+                    </button>
+                    <button class="settings-mini-btn accent" onclick="window.addAccountEntry()" title="Register an additional Cloudinary Account">
+                        <i class="fas fa-plus"></i> Add Account
+                    </button>
+                </div>
+            </div>
+            <div class="settings-row-sub" style="margin-bottom:12px;">
+                Intelligent routing fills accounts under 70% in priority order. Direct deletions and usage tracking keep all quotas aligned across Web and Android in real-time.
+            </div>
+            <div id="settingsAccountsList" class="settings-accounts-list">
+                <div class="acct-empty"><i class="fas fa-spinner fa-spin"></i> Loading account telemetry...</div>
+            </div>
+        </div>
+
+        <!-- SECTION 2: Storage Growth Analytics -->
+        <div class="control-card" id="settingsTrendSection">
+            <div class="control-card-header">
+                <div class="control-card-title">
+                    <i class="fas fa-chart-line"></i> STORAGE GROWTH TREND
+                </div>
+                <div class="device-telemetry-badge">
+                    <i class="fas fa-clock"></i> Auto-Generated
+                </div>
+            </div>
+            <div class="settings-row-sub" style="margin-bottom:12px;">
+                Cumulative storage curve based on actual upload timestamps and file sizes.
+            </div>
+            <div id="storageTrendChart"></div>
+        </div>
+
+        <!-- SECTION 3: AI OCR Engine & Search Backlog -->
+        <div class="control-card" id="settingsOcrSection">
+            <div class="control-card-header">
+                <div class="control-card-title">
+                    <i class="fas fa-magnifying-glass"></i> CLOUD OCR & AI INDEXER
+                </div>
+                <div class="settings-section-actions">
+                    <button class="settings-mini-btn accent" id="forceOcrBtn" onclick="window.forceOcrBacklog()">
+                        <i class="fas fa-play"></i> Force OCR Catch-Up
+                    </button>
+                </div>
+            </div>
+            <div class="settings-row-sub" style="margin-bottom:10px;">
+                Automatically extracts text from uploaded images for instant semantic searching in gallery and viewer.
+            </div>
+            <div class="settings-row-sub" id="ocrStatusLabel" style="font-family:var(--font-mono);color:var(--neon2);padding:6px 0;">
+                Status: Ready
+            </div>
+        </div>
+
+        <!-- SECTION 4: Remote App Lock & Security Preferences -->
+        <div class="control-card">
+            <div class="control-card-header">
+                <div class="control-card-title">
+                    <i class="fas fa-shield-halved"></i> APP SECURITY & PIN LOCK
+                </div>
+            </div>
+            <div class="settings-row">
+                <div class="settings-row-label">
+                    <span>Passcode Lock</span>
+                    <span class="settings-row-sub">Require 4-digit code on app launch</span>
+                </div>
+                <label class="csm-switch">
+                    <input type="checkbox" id="passcodeEnabledToggle" onchange="window.setPasscodeEnabled(this.checked)">
+                    <span class="csm-switch-slider"></span>
+                </label>
+            </div>
+            <div class="settings-row">
+                <div class="settings-row-label">
+                    <span>Change Passcode</span>
+                    <span class="settings-row-sub">Update master 4-digit PIN</span>
+                </div>
+                <button class="settings-mini-btn" onclick="window.updatePasscode()"><i class="fas fa-key"></i> Change</button>
+            </div>
+            <div class="settings-row">
+                <div class="settings-row-label">
+                    <span>Unlock Pattern</span>
+                    <span class="settings-row-sub">Connect 3x3 dot matrix pattern</span>
+                </div>
+                <div style="display:flex;gap:6px;">
+                    <button class="settings-mini-btn" onclick="window.openPatternSetup()"><i class="fas fa-diagram-project"></i> <span id="patternSetupBtnLabel">Set Pattern</span></button>
+                    <button class="settings-mini-btn danger hidden" id="removePatternBtn" onclick="window.removePattern()" title="Remove pattern"><i class="fas fa-trash"></i></button>
+                </div>
+            </div>
+        </div>
+
+        <!-- SECTION 5: Duress & Decoy Vault Settings -->
+        <div class="control-card" id="settingsDuressSection">
+            <div class="control-card-header">
+                <div class="control-card-title">
+                    <i class="fas fa-user-secret"></i> DURESS MODE & DECOY VAULT
+                </div>
+            </div>
+            <div class="settings-row-sub" style="margin-bottom:10px;">
+                Entering the duress PIN/pattern reveals ONLY decoy files, hiding real storage completely.
+            </div>
+            <div class="settings-row">
+                <div class="settings-row-label">
+                    <span>Duress Passcode</span>
+                    <span class="settings-row-sub">Secondary code for fake vault</span>
+                </div>
+                <button class="settings-mini-btn" onclick="window.setDuressPasscode()"><i class="fas fa-key"></i> <span id="duressPasscodeBtnLabel">Set</span></button>
+            </div>
+            <div class="settings-row">
+                <div class="settings-row-label">
+                    <span>Duress Pattern</span>
+                    <span class="settings-row-sub">Secondary pattern for fake vault</span>
+                </div>
+                <button class="settings-mini-btn" onclick="window.openDuressPatternSetup()"><i class="fas fa-diagram-project"></i> <span id="duressPatternBtnLabel">Set</span></button>
+            </div>
+            <div class="settings-row">
+                <div class="settings-row-label">
+                    <span>Decoy Files</span>
+                    <span class="settings-row-sub" id="duressCountLabel">0 file(s) marked</span>
+                </div>
+                <span class="settings-row-sub">Mark files from gallery menu</span>
+            </div>
+        </div>
+
+        <!-- SECTION 6: Direct Web Upload Panel -->
+        <div class="control-card control-grid-full">
+            <div class="control-card-header">
+                <div class="control-card-title">
+                    <i class="fas fa-cloud-arrow-up"></i> DIRECT CLOUD UPLOAD & ROUTING
+                </div>
+                <button class="settings-mini-btn accent" onclick="window.createFolder()">
+                    <i class="fas fa-folder-plus"></i> New Folder
+                </button>
+            </div>
+            <div class="drop-zone" id="dropZone" ondrop="window.handleDrop(event)" ondragover="event.preventDefault()" ondragenter="this.classList.add('drag-over')" ondragleave="this.classList.remove('drag-over')">
+                <div class="dz-icon"><i class="fas fa-cloud-arrow-up"></i></div>
+                <div class="dz-text">Drag & drop photos, videos or documents here, or</div>
+                <label class="dz-btn">
+                    <i class="fas fa-folder-open"></i> Browse Files
+                    <input type="file" id="fileInput" multiple onchange="window.handleFileSelect(event)">
+                </label>
+                <div class="dz-hint">Supports Images, Videos, PDFs, Documents, Archives · Up to 50MB per file</div>
+            </div>
+            <div id="stagedFiles" class="staged-files" style="margin-top:12px;"></div>
+            <div class="up-meta" style="margin-top:12px;">
+                <input type="text" id="uploadName" placeholder="Custom filename (optional)">
+                <select id="uploadFolder"><option value="">No Folder (Root)</option></select>
+                <select id="uploadAccount" title="Cloud account to upload to"><option value="">⚡ Auto (Balanced Routing)</option></select>
+            </div>
+            <div id="uploadProgress" class="upload-progress hidden" style="margin-top:12px;">
+                <div class="up-progress-label">
+                    <span id="upFileName">Uploading…</span>
+                    <span id="upPercent">0%</span>
+                </div>
+                <div class="up-bar-wrap"><div id="upBar" class="up-bar"></div></div>
+            </div>
+            <div class="up-actions" style="margin-top:14px;">
+                <button class="up-submit" id="uploadBtn" onclick="window.startUpload()">
+                    <i class="fas fa-rocket"></i> Dispatch Upload
+                </button>
+            </div>
+        </div>
+
+        <!-- SECTION 7: Live Activity & Movement Terminal -->
+        <div class="control-card control-grid-full" id="liveLogsSection">
+            <div class="control-card-header">
+                <div class="control-card-title">
+                    <i class="fas fa-terminal"></i> LIVE MOVEMENT & AUDIT TERMINAL
+                </div>
+                <div class="device-telemetry-badge">
+                    <i class="fas fa-satellite-dish"></i> Real-Time Listener Active
+                </div>
+            </div>
+            <div class="settings-row-sub" style="margin-bottom:10px;">
+                Instant event stream capturing background folder backups, uploads, moves, trashings, and quota updates from mobile and web.
+            </div>
+            <div class="log-terminal" id="webControlLogTerminal">
+                <div class="log-row">
+                    <span class="log-time">[SYSTEM]</span>
+                    <span class="log-tag-success">ONLINE</span>
+                    <span class="log-msg">Web Control Center connected to Firebase Realtime Database.</span>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- Context menu & Modals -->
+    <div id="contextMenu" class="context-menu hidden"></div>
+    <div id="modalOverlay" class="modal-overlay hidden">
+        <div class="modal-box" id="modalBox"></div>
+    </div>
+
+    <!-- Full-page settings overlay container (matches script.js expectations) -->
+    <div id="settingsOverlay" class="settings-overlay hidden">
+        <div class="settings-topbar">
+            <div class="settings-topbar-title"><i class="fas fa-gear"></i> ADVANCED SETTINGS</div>
+            <button class="settings-close" onclick="window.closeSettings()"><i class="fas fa-xmark"></i></button>
+        </div>
+        <div class="settings-body">
+            <!-- References inside main grid are utilized -->
+        </div>
+    </div>
+
+    <!-- Pattern Setup Overlay -->
+    <div id="patternSetupOverlay" class="settings-overlay gesture-setup-overlay hidden">
+        <div class="settings-topbar">
+            <div class="settings-topbar-title"><i class="fas fa-diagram-project"></i> SET PATTERN</div>
+            <button class="settings-close" onclick="window.closePatternSetup()"><i class="fas fa-xmark"></i></button>
+        </div>
+        <div class="settings-body gesture-setup-body">
+            <div id="patSetupMsg" class="settings-row-sub gs-msg">Connect at least 4 dots to set your pattern</div>
+            <svg id="patternSetupSvg" class="pattern-grid" viewBox="0 0 240 240">
+                <g id="patternSetupSvgLines"></g>
+                <circle class="pattern-dot" data-idx="0" cx="40"  cy="40"  r="14"></circle>
+                <circle class="pattern-dot" data-idx="1" cx="120" cy="40"  r="14"></circle>
+                <circle class="pattern-dot" data-idx="2" cx="200" cy="40"  r="14"></circle>
+                <circle class="pattern-dot" data-idx="3" cx="40"  cy="120" r="14"></circle>
+                <circle class="pattern-dot" data-idx="4" cx="120" cy="120" r="14"></circle>
+                <circle class="pattern-dot" data-idx="5" cx="200" cy="120" r="14"></circle>
+                <circle class="pattern-dot" data-idx="6" cx="40"  cy="200" r="14"></circle>
+                <circle class="pattern-dot" data-idx="7" cx="120" cy="200" r="14"></circle>
+                <circle class="pattern-dot" data-idx="8" cx="200" cy="200" r="14"></circle>
+            </svg>
+            <div class="gesture-actions">
+                <button class="settings-mini-btn" onclick="window.clearPatternSetup()"><i class="fas fa-rotate-left"></i> Clear</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- App footer / developer credit -->
+    <footer class="app-footer" data-aos>
+        <div class="footer-inner">
+            <div class="footer-logo">
+                <i class="fas fa-database"></i> CSM DRIVE ULTRA PRO · CONTROL CENTER
+            </div>
+            <div class="footer-dev">
+                Crafted by <span class="footer-dev-name">Csm Mohasin Alam</span>
+            </div>
+            <div class="footer-links">
+                <span class="footer-link"><i class="fas fa-shield-halved"></i> Zero-Knowledge Vault</span>
+                <span class="footer-link"><i class="fas fa-wifi"></i> Offline-First</span>
+                <span class="footer-link"><i class="fas fa-cloud"></i> Multi-Cloudinary</span>
+            </div>
+        </div>
+    </footer>
+</div>
+
+<!-- Scripts -->
+<script src="lightbox.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script type="module" src="script.js"></script>
+
+<!-- Live Log Streamer Enhancement for Web Control -->
+<script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-app.js";
+    import { getDatabase, ref, onChildAdded, query, limitToLast } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-database.js";
+
+    const fbConfig = {
+        apiKey:      "AIzaSyBtmUmV1KxQDB0jN9gUQnh-eYWKllMPav0",
+        authDomain:  "photos-58c8e.firebaseapp.com",
+        projectId:   "photos-58c8e",
+        databaseURL: "https://photos-58c8e-default-rtdb.firebaseio.com"
+    };
+
+    try {
+        const app = initializeApp(fbConfig, "control-log-stream");
+        const rtdb = getDatabase(app);
+        const logRef = query(ref(rtdb, "activity_logs"), limitToLast(40));
+        const terminal = document.getElementById("webControlLogTerminal");
+
+        onChildAdded(logRef, (snap) => {
+            const data = snap.val();
+            if (!data || !terminal) return;
+            const timeStr = data.timestamp ? new Date(data.timestamp).toLocaleTimeString() : new Date().toLocaleTimeString();
+            const tagCls = data.status === "SUCCESS" ? "log-tag-success" : (data.status === "FAILED" ? "log-tag-error" : "log-tag-skip");
+            
+            const div = document.createElement("div");
+            div.className = "log-row";
+            div.innerHTML = `
+                <span class="log-time">[${timeStr}]</span>
+                <span class="${tagCls}">${data.type || "EVENT"} ${data.status || ""}</span>
+                <span class="log-msg">${data.fileName || ""}: ${data.errorReason || "Processed"}</span>
+            `;
+            terminal.appendChild(div);
+            terminal.scrollTop = terminal.scrollHeight;
+        });
+    } catch (e) {
+        console.warn("Log terminal stream initialization notice:", e);
+    }
+</script>
+
+<!-- SW Registration -->
+<script>
+if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/sw.js')
+            .then(r => console.log('[SW] Registered', r.scope))
+            .catch(e => console.warn('[SW] Failed', e));
+    });
+}
+</script>
+</body>
+</html>

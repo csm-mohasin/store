@@ -1528,6 +1528,17 @@ function updateStats() {
     document.getElementById('storageText').textContent = `${totalSize.toFixed(1)} MB / ${cap} MB (${files.length} files)`;
 }
 
+/* ─── XSS Sanitization ────────────────────────────────────────── */
+function escapeHtml(str) {
+    if (str === null || str === undefined) return '';
+    return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
 /* ─── Folders ────────────────────────────────────────────────── */
 function renderFolders() {
     const bar = document.getElementById('folderBar');
@@ -1537,11 +1548,12 @@ function renderFolders() {
         <i class="fas fa-folder"></i> All <span class="count">${allCount}</span></div>`;
     folders.forEach(f => {
         const cnt = files.filter(file => file.folder === f.id && !file.trash).length;
+        const safeName = escapeHtml(f.name);
         bar.innerHTML += `<div class="folder-pill ${currentFolder === f.id ? 'active' : ''}"
             onclick="window.setFolder('${f.id}', this)"
             oncontextmenu="window.folderContext(event,'${f.id}')">
             <i class="fas fa-folder" style="color:${f.color||'var(--neon)'}"></i>
-            ${f.name} <span class="count">${cnt}</span></div>`;
+            ${safeName} <span class="count">${cnt}</span></div>`;
     });
     bar.innerHTML += `<div class="folder-pill add-folder" onclick="window.createFolder()"><i class="fas fa-plus"></i> New</div>`;
 }
@@ -1549,7 +1561,12 @@ function renderFolders() {
 function updateFolderSelect() {
     const sel = document.getElementById('uploadFolder');
     sel.innerHTML = '<option value="">No Folder</option>';
-    folders.forEach(f => sel.innerHTML += `<option value="${f.id}">${f.name}</option>`);
+    folders.forEach(f => {
+        const opt = document.createElement('option');
+        opt.value = f.id;
+        opt.textContent = f.name;
+        sel.appendChild(opt);
+    });
 }
 
 /* ─── Visible files ──────────────────────────────────────────── */
