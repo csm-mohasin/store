@@ -23,6 +23,21 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-app.js";
 import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, getIdToken } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-auth.js";
 import { getDatabase, ref, push, set, get, onValue, remove, update } from "https://www.gstatic.com/firebasejs/11.0.1/firebase-database.js";
+import {
+    getFirestore,
+    collection,
+    doc,
+    setDoc,
+    getDoc,
+    getDocs,
+    onSnapshot,
+    addDoc,
+    query,
+    where,
+    orderBy,
+    limit,
+    deleteDoc
+} from "https://www.gstatic.com/firebasejs/11.0.1/firebase-firestore.js";
 
 /* ─── Firebase config ───────────────────────────────────────── */
 const firebaseConfig = {
@@ -34,6 +49,7 @@ const firebaseConfig = {
 const fbApp = initializeApp(firebaseConfig);
 const auth  = getAuth(fbApp);
 const db    = getDatabase(fbApp);
+const firestore = getFirestore(fbApp);
 const DB_PATH       = 'my_gallery';
 const FOLDERS_PATH  = 'folders';
 const SETTINGS_PATH = 'settings';
@@ -2578,3 +2594,595 @@ window.updatePasscode = () => {
         ]
     });
 };
+
+/* ================================================================
+   NEXUS // CONTROL PLANE DASHBOARD CLIENT IMPLEMENTATION
+   ================================================================ */
+
+let activeDevicesMap = new Map();
+let unsubscribeDevices = null;
+let unsubscribeCommands = null;
+let unsubscribeAudit = null;
+let unsubscribeConfig = null;
+let unsubscribePresets = null;
+
+window.openControlPlane = () => {
+    if (!auth.currentUser) {
+        showToast('Please sign in first', 'warning');
+        return;
+    }
+    const overlay = document.getElementById('controlPlaneOverlay');
+    if (overlay) {
+        overlay.classList.remove('hidden');
+        initControlPlane();
+    }
+};
+
+window.closeControlPlane = () => {
+    const overlay = document.getElementById('controlPlaneOverlay');
+    if (overlay) overlay.classList.add('hidden');
+};
+
+window.switchCpTab = (tabName) => {
+    document.querySelectorAll('.cp-tab').forEach(t => {
+        t.classList.toggle('active', t.getAttribute('data-tab') === tabName);
+    });
+    const panes = {
+        devices: document.getElementById('cpTabDevices'),
+        settings: document.getElementById('cpTabSettings'),
+        presets: document.getElementById('cpTabPresets'),
+        commands: document.getElementById('cpTabCommands'),
+        security: document.getElementById('cpTabSecurity'),
+        audit: document.getElementById('cpTabAudit')
+    };
+    Object.keys(panes).forEach(k => {
+        if (panes[k]) panes[k].classList.toggle('hidden', k !== tabName);
+    });
+};
+
+function initControlPlane() {
+    const uid = auth.currentUser?.uid;
+    if (!uid) return;
+
+    listenDevices(uid);
+    listenCommands(uid);
+    listenConfig(uid);
+    listenPresets(uid);
+    window.loadAuditLogs();
+}
+
+function listenDevices(uid) {
+    if (unsubscribeDevices) unsubscribeDevices();
+    const devCol = collection(firestore, `users/${uid}/devices`);
+    unsubscribeDevices = onSnapshot(devCol, snapshot => {
+        activeDevicesMap.clear();
+        snapshot.forEach(docSnap => {
+            activeDevicesMap.set(docSnap.id, docSnap.data());
+        });
+        renderDevices();
+        updateDeviceSelectors();
+    }, err => {
+        console.warn('Devices listener warning', err);
+    });
+}
+
+function renderDevices() {
+    const listEl = document.getElementById('cpDevicesList');
+    const badgeEl = document.getElementById('cpDeviceCount');
+    if (!listEl) return;
+
+    if (badgeEl) {
+        badgeEl.textContent = `${activeDevicesMap.size} Device(s) Live`;
+    }
+
+    if (activeDevicesMap.size === 0) {
+        listEl.innerHTML = `<div class="settings-row-sub" style="grid-column: 1/-1; text-align:center; padding:40px;">
+            No connected Android devices registered yet. Open the CSM Drive Android app to automatically register.
+        </div>`;
+        return;
+    }
+
+    let html = '';
+    const now = Date.now();
+    activeDevicesMap.forEach((dev, devId) => {
+        const lastSeen = dev.lastSeen || 0;
+        const isOnline = (now - lastSeen) < (20 * 60 * 1000); // within 20 mins
+        const lastSeenStr = lastSeen ? new Date(lastSeen).toLocaleTimeString() : 'Unknown';
+        const freeMb = dev.freeStorageMb || 0;
+        const totalMb = dev.totalStorageMb || 1;
+        const usedMb = Math.max(0, totalMb - freeMb);
+        const storagePct = Math.min(100, Math.round((usedMb / totalMb) * 100));
+        const battery = dev.batteryPct || 0;
+        const charging = dev.isCharging ? '⚡' : '';
+
+        html += `
+        <div class="dev-card">
+            <div class="dev-hdr">
+                <div class="dev-name"><i class="fas fa-mobile-screen" style="color:var(--neon2)"></i> ${escapeHtml(dev.deviceModel || 'Android Device')}</div>
+                <div class="dev-live">
+                    <span class="dev-dot ${isOnline ? '' : 'offline'}"></span>
+                    <span>${isOnline ? 'ONLINE' : 'IDLE'}</span>
+                </div>
+            </div>
+            <div class="dev-meta">
+                <div><i class="fas fa-battery-half"></i> Battery: <b>${battery}% ${charging}</b></div>
+                <div><i class="fas fa-wifi"></i> Net: <b>${escapeHtml(dev.networkType || 'WIFI')}</b></div>
+                <div><i class="fas fa-folder"></i> Watcher: <b>${dev.isWatcherRunning ? 'ACTIVE' : 'IDLE'}</b></div>
+                <div><i class="fas fa-clock"></i> Seen: <b>${lastSeenStr}</b></div>
+            </div>
+            <div class="dev-meter">
+                <div class="meter-label"><span>Storage (${Math.round(freeMb/1024)}GB free)</span><span>${storagePct}%</span></div>
+                <div class="meter-track"><div class="meter-fill cyan" style="width:${storagePct}%"></div></div>
+            </div>
+            <div class="dev-actions">
+                <button class="cp-btn" onclick="window.sendDeviceCommand('${escapeHtml(devId)}', 'FORCE_BACKUP')"><i class="fas fa-play"></i> Backup</button>
+                <button class="cp-btn danger" onclick="window.sendDeviceCommand('${escapeHtml(devId)}', 'LOCK_APP')"><i class="fas fa-lock"></i> Lock</button>
+                <button class="cp-btn accent" onclick="window.sendDeviceCommand('${escapeHtml(devId)}', 'CLEAR_CACHE')"><i class="fas fa-broom"></i> Clean</button>
+            </div>
+        </div>`;
+    });
+
+    listEl.innerHTML = html;
+}
+
+function updateDeviceSelectors() {
+    const selCmd = document.getElementById('cmdTargetDevice');
+    const selPin = document.getElementById('remotePinTargetDevice');
+    if (!selCmd && !selPin) return;
+
+    let options = '<option value="">Broadcast to All Linked Devices</option>';
+    activeDevicesMap.forEach((dev, devId) => {
+        options += `<option value="${escapeHtml(devId)}">${escapeHtml(dev.deviceModel || devId)}</option>`;
+    });
+
+    if (selCmd) selCmd.innerHTML = options;
+    if (selPin) selPin.innerHTML = options;
+}
+
+window.refreshDevices = () => {
+    if (auth.currentUser) listenDevices(auth.currentUser.uid);
+    showToast('Device telemetry refreshed', 'info');
+};
+
+/* ─── Commands ───────────────────────────────────────────────── */
+function logTerminal(tag, msg, type = '') {
+    const term = document.getElementById('terminalOutput');
+    if (!term) return;
+    const timeStr = new Date().toTimeString().split(' ')[0];
+    const line = document.createElement('div');
+    line.className = 't-line';
+    line.innerHTML = `<span class="t-time">[${timeStr}]</span> <span class="t-tag">[${escapeHtml(tag)}]</span> <span class="t-msg ${type}">${escapeHtml(msg)}</span>`;
+    term.appendChild(line);
+    term.scrollTop = term.scrollHeight;
+}
+
+function listenCommands(uid) {
+    if (unsubscribeCommands) unsubscribeCommands();
+    const cmdCol = collection(firestore, `users/${uid}/commands`);
+    const q = query(cmdCol, orderBy('createdAt', 'desc'), limit(15));
+    unsubscribeCommands = onSnapshot(q, snap => {
+        snap.docChanges().forEach(change => {
+            const data = change.doc.data();
+            if (change.type === 'modified' || change.type === 'added') {
+                if (data.status === 'SUCCESS') {
+                    logTerminal('COMMAND', `${data.type} -> SUCCESS: ${data.result || 'Executed successfully'}`, 'success');
+                } else if (data.status === 'FAILED') {
+                    logTerminal('COMMAND', `${data.type} -> FAILED: ${data.result || 'Execution failed'}`, 'error');
+                } else if (data.status === 'EXECUTING') {
+                    logTerminal('COMMAND', `${data.type} is now EXECUTING on device...`, 'warn');
+                }
+            }
+        });
+    }, err => {
+        console.warn('Commands listener warning', err);
+    });
+}
+
+window.sendDeviceCommand = async (deviceId, actionType, payload = {}) => {
+    const uid = auth.currentUser?.uid;
+    if (!uid) return;
+
+    try {
+        logTerminal('DISPATCH', `Sending ${actionType} to ${deviceId || 'ALL DEVICES'}...`);
+        const cmdCol = collection(firestore, `users/${uid}/commands`);
+        await addDoc(cmdCol, {
+            type: actionType,
+            targetDeviceId: deviceId || null,
+            payload: payload,
+            status: 'PENDING',
+            createdAt: Date.now()
+        });
+        showToast(`Command ${actionType} dispatched`, 'success');
+    } catch (e) {
+        logTerminal('ERROR', `Dispatch failed: ${e.message}`, 'error');
+        showToast('Failed to dispatch command', 'error');
+    }
+};
+
+window.dispatchSelectedCommand = () => {
+    const devId = document.getElementById('cmdTargetDevice')?.value || '';
+    const act = document.getElementById('cmdActionType')?.value || 'FORCE_BACKUP';
+    window.sendDeviceCommand(devId, act);
+};
+
+/* ─── Remote PIN Change with WebCrypto PBKDF2 ──────────────────── */
+async function computePBKDF2Hash(pinStr, iterations = 210000) {
+    const enc = new TextEncoder();
+    const pinBytes = enc.encode(pinStr);
+    const saltBytes = window.crypto.getRandomValues(new Uint8Array(16));
+
+    const keyMaterial = await window.crypto.subtle.importKey(
+        'raw',
+        pinBytes,
+        'PBKDF2',
+        false,
+        ['deriveBits']
+    );
+
+    const derivedBits = await window.crypto.subtle.deriveBits(
+        {
+            name: 'PBKDF2',
+            salt: saltBytes,
+            iterations: iterations,
+            hash: 'SHA-256'
+        },
+        keyMaterial,
+        256
+    );
+
+    const saltHex = Array.from(saltBytes).map(b => b.toString(16).padStart(2, '0')).join('');
+    const hashHex = Array.from(new Uint8Array(derivedBits)).map(b => b.toString(16).padStart(2, '0')).join('');
+
+    return `pbkdf2$${iterations}$${saltHex}$${hashHex}`;
+}
+
+window.executeRemotePinChange = async () => {
+    const targetDev = document.getElementById('remotePinTargetDevice')?.value || '';
+    const pin1 = document.getElementById('remotePinNew')?.value?.trim() || '';
+    const pin2 = document.getElementById('remotePinConfirm')?.value?.trim() || '';
+    const statusEl = document.getElementById('remotePinStatus');
+
+    if (!/^\d{4,8}$/.test(pin1)) {
+        if (statusEl) statusEl.textContent = 'PIN must consist of 4 to 8 digits only.';
+        showToast('PIN must be 4 to 8 digits', 'warning');
+        return;
+    }
+    if (pin1 !== pin2) {
+        if (statusEl) statusEl.textContent = 'PIN and confirmation do not match.';
+        showToast('PINs do not match', 'warning');
+        return;
+    }
+
+    try {
+        if (statusEl) statusEl.textContent = 'Generating 210,000-iteration PBKDF2 WebCrypto hash...';
+        const hashStr = await computePBKDF2Hash(pin1, 210000);
+
+        if (statusEl) statusEl.textContent = 'Dispatching secure CHANGE_PIN command to device...';
+        await window.sendDeviceCommand(targetDev, 'CHANGE_PIN', {
+            newPinHash: hashStr,
+            pinLength: pin1.length
+        });
+
+        if (statusEl) statusEl.textContent = 'CHANGE_PIN dispatched. Awaiting device acknowledgment...';
+        document.getElementById('remotePinNew').value = '';
+        document.getElementById('remotePinConfirm').value = '';
+        showToast('Secure PIN change dispatched', 'success');
+    } catch (e) {
+        if (statusEl) statusEl.textContent = `Error: ${e.message}`;
+        showToast('PIN change failed', 'error');
+    }
+};
+
+/* ─── Global App Settings Sync & Rollback ─────────────────────── */
+function listenConfig(uid) {
+    if (unsubscribeConfig) unsubscribeConfig();
+    const configDoc = doc(firestore, `users/${uid}/config/app`);
+    unsubscribeConfig = onSnapshot(configDoc, snap => {
+        if (snap.exists()) {
+            renderConfigForm(snap.data());
+        } else {
+            renderDefaultConfigForm();
+        }
+        loadConfigHistory(uid);
+    }, err => {
+        console.warn('Config sync listener error', err);
+    });
+}
+
+const SCHEMA_FIELDS = [
+    { key: 'themeMode', label: 'Theme Mode', type: 'select', options: ['DARK', 'LIGHT', 'SYSTEM'], def: 'DARK' },
+    { key: 'gridColumns', label: 'Gallery Grid Columns (2-6)', type: 'number', min: 2, max: 6, def: 3 },
+    { key: 'serverSortOrder', label: 'Server Sort Order', type: 'select', options: ['NEWEST', 'OLDEST', 'NAME', 'SIZE'], def: 'NEWEST' },
+    { key: 'uploadWifiOnly', label: 'Upload Wi-Fi Only', type: 'checkbox', def: true },
+    { key: 'uploadChargingOnly', label: 'Upload Charging Only', type: 'checkbox', def: false },
+    { key: 'autoBackupEnabled', label: 'Auto Backup Enabled', type: 'checkbox', def: false },
+    { key: 'offlineCacheLimitGb', label: 'Offline Cache Limit (GB)', type: 'number', min: 1, max: 50, def: 5 },
+    { key: 'offlineCacheWifiOnly', label: 'Cache Wi-Fi Only', type: 'checkbox', def: true },
+    { key: 'autoLockTimeoutMinutes', label: 'Auto-Lock Timeout (Min)', type: 'number', min: 0, max: 60, def: 1 },
+    { key: 'allowRemotePinChange', label: 'Allow Remote PIN Change', type: 'checkbox', def: false },
+    { key: 'allowRemoteDangerous', label: 'Allow Dangerous Operations', type: 'checkbox', def: false },
+    { key: 'notifProgressEnabled', label: 'Progress Notification', type: 'checkbox', def: true },
+    { key: 'notifSummaryEnabled', label: 'Summary Notification', type: 'checkbox', def: true },
+    { key: 'notifMonitorEnabled', label: 'Folder Monitor Notification', type: 'checkbox', def: true }
+];
+
+function renderConfigForm(data = {}) {
+    const formEl = document.getElementById('cpSettingsForm');
+    if (!formEl) return;
+    const settings = data.settings || {};
+
+    let html = '';
+    SCHEMA_FIELDS.forEach(f => {
+        const val = (settings[f.key] !== undefined) ? settings[f.key] : f.def;
+        if (f.type === 'checkbox') {
+            html += `
+            <div class="dev-card" style="padding:14px; display:flex; flex-direction:row; align-items:center; justify-content:space-between;">
+                <div>
+                    <span style="font-family:var(--font-mono); font-size:0.85rem; color:#fff;">${escapeHtml(f.label)}</span>
+                </div>
+                <input type="checkbox" id="cfg_${f.key}" ${val ? 'checked' : ''} style="width:20px; height:20px; accent-color:var(--neon);">
+            </div>`;
+        } else if (f.type === 'select') {
+            const opts = f.options.map(o => `<option value="${o}" ${o === val ? 'selected' : ''}>${o}</option>`).join('');
+            html += `
+            <div class="dev-card" style="padding:14px;">
+                <label class="meter-label">${escapeHtml(f.label)}</label>
+                <select id="cfg_${f.key}" style="width:100%; margin-top:6px; padding:8px; background:var(--surface2); border:1px solid var(--border); color:#fff; border-radius:6px; font-family:var(--font-mono);">
+                    ${opts}
+                </select>
+            </div>`;
+        } else if (f.type === 'number') {
+            html += `
+            <div class="dev-card" style="padding:14px;">
+                <label class="meter-label">${escapeHtml(f.label)}</label>
+                <input type="number" id="cfg_${f.key}" value="${val}" min="${f.min || 0}" max="${f.max || 100}" style="width:100%; margin-top:6px; padding:8px; background:var(--surface2); border:1px solid var(--border); color:#fff; border-radius:6px; font-family:var(--font-mono);">
+            </div>`;
+        }
+    });
+
+    formEl.innerHTML = html;
+}
+
+function renderDefaultConfigForm() {
+    renderConfigForm({});
+}
+
+window.saveGlobalSettings = async () => {
+    const uid = auth.currentUser?.uid;
+    if (!uid) return;
+
+    const newSettings = {};
+    SCHEMA_FIELDS.forEach(f => {
+        const el = document.getElementById(`cfg_${f.key}`);
+        if (!el) return;
+        if (f.type === 'checkbox') {
+            newSettings[f.key] = el.checked;
+        } else if (f.type === 'number') {
+            newSettings[f.key] = parseInt(el.value, 10) || f.def;
+        } else {
+            newSettings[f.key] = el.value;
+        }
+    });
+
+    const version = Date.now();
+    try {
+        const configDoc = doc(firestore, `users/${uid}/config/app`);
+        const payload = {
+            version: version,
+            updatedAt: version,
+            updatedBy: 'Web Dashboard',
+            reason: 'Settings updated via Web Control Plane',
+            settings: newSettings
+        };
+        await setDoc(configDoc, payload);
+
+        // Record in history collection
+        const histDoc = doc(firestore, `users/${uid}/config/app/history/${version}`);
+        await setDoc(histDoc, payload);
+
+        showToast('New configuration version published', 'success');
+        logTerminal('CONFIG', `Published settings v${version} across all devices.`, 'success');
+    } catch (e) {
+        showToast('Failed to publish settings', 'error');
+        console.error('Save config error', e);
+    }
+};
+
+async function loadConfigHistory(uid) {
+    const listEl = document.getElementById('cpHistoryList');
+    if (!listEl) return;
+    try {
+        const histCol = collection(firestore, `users/${uid}/config/app/history`);
+        const q = query(histCol, orderBy('version', 'desc'), limit(8));
+        const snap = await getDocs(q);
+        if (snap.empty) {
+            listEl.innerHTML = '<div class="settings-row-sub">No version history yet.</div>';
+            return;
+        }
+        let html = '';
+        snap.forEach(d => {
+            const data = d.data();
+            const dateStr = new Date(data.updatedAt || data.version).toLocaleString();
+            html += `
+            <div class="history-item">
+                <div>
+                    <div><b>Version ${data.version}</b> — ${escapeHtml(data.reason || 'Config update')}</div>
+                    <div style="color:var(--text-muted); font-size:0.7rem;">Author: ${escapeHtml(data.updatedBy || 'Web')} • ${dateStr}</div>
+                </div>
+                <button class="cp-btn" onclick="window.rollbackVersion('${d.id}')"><i class="fas fa-rotate-left"></i> Rollback</button>
+            </div>`;
+        });
+        listEl.innerHTML = html;
+    } catch (e) {
+        listEl.innerHTML = '<div class="settings-row-sub">Error loading history.</div>';
+    }
+}
+
+window.rollbackVersion = async (targetVerStr) => {
+    const uid = auth.currentUser?.uid;
+    if (!uid) return;
+    try {
+        const histDoc = doc(firestore, `users/${uid}/config/app/history/${targetVerStr}`);
+        const snap = await getDoc(histDoc);
+        if (!snap.exists()) {
+            showToast('Version snapshot not found', 'error');
+            return;
+        }
+        const oldData = snap.data();
+        const nextVer = Date.now();
+        const configDoc = doc(firestore, `users/${uid}/config/app`);
+        const payload = {
+            version: nextVer,
+            updatedAt: nextVer,
+            updatedBy: 'Web Dashboard Rollback',
+            reason: `Rollback to version ${targetVerStr}`,
+            settings: oldData.settings || {}
+        };
+        await setDoc(configDoc, payload);
+        showToast(`Rolled back to v${targetVerStr}`, 'success');
+        logTerminal('CONFIG', `Rolled back to snapshot v${targetVerStr}.`, 'warn');
+    } catch (e) {
+        showToast('Rollback failed', 'error');
+    }
+};
+
+/* ─── Presets ────────────────────────────────────────────────── */
+function listenPresets(uid) {
+    if (unsubscribePresets) unsubscribePresets();
+    const presetsCol = collection(firestore, `users/${uid}/presets`);
+    unsubscribePresets = onSnapshot(presetsCol, snap => {
+        const listEl = document.getElementById('cpPresetsList');
+        if (!listEl) return;
+        if (snap.empty) {
+            listEl.innerHTML = '<div class="settings-row-sub" style="grid-column: 1/-1; text-align:center; padding:30px;">No backup presets found. Create one or sync from Android app.</div>';
+            return;
+        }
+        let html = '';
+        snap.forEach(d => {
+            const p = d.data();
+            const foldersStr = (p.folders || []).join(', ') || 'None';
+            html += `
+            <div class="dev-card">
+                <div class="dev-hdr">
+                    <div class="dev-name"><i class="fas fa-folder-tree" style="color:var(--neon)"></i> ${escapeHtml(p.name || 'Unnamed')}</div>
+                    <span class="cp-badge">${p.enabled ? 'ACTIVE' : 'PAUSED'}</span>
+                </div>
+                <div class="dev-meta">
+                    <div>Folders: <b>${escapeHtml(foldersStr)}</b></div>
+                    <div>Net: <b>${escapeHtml(p.networkType || 'WIFI_ONLY')}</b></div>
+                    <div>Auto New: <b>${p.autoBackupNewFiles ? 'YES' : 'NO'}</b></div>
+                    <div>Backed Up: <b>${p.filesBackedUpCount || 0} files</b></div>
+                </div>
+                <div class="dev-actions">
+                    <button class="cp-btn" onclick="window.togglePresetRemote('${d.id}', ${!p.enabled})">
+                        <i class="fas fa-${p.enabled ? 'pause' : 'play'}"></i> ${p.enabled ? 'Pause' : 'Resume'}
+                    </button>
+                    <button class="cp-btn danger" onclick="window.deletePresetRemote('${d.id}')">
+                        <i class="fas fa-trash"></i> Delete
+                    </button>
+                </div>
+            </div>`;
+        });
+        listEl.innerHTML = html;
+    });
+}
+
+window.togglePresetRemote = async (presetId, newEnabled) => {
+    const uid = auth.currentUser?.uid;
+    if (!uid) return;
+    try {
+        const pDoc = doc(firestore, `users/${uid}/presets/${presetId}`);
+        await setDoc(pDoc, { enabled: newEnabled, updatedAt: Date.now() }, { merge: true });
+        showToast(`Preset ${newEnabled ? 'enabled' : 'paused'}`, 'success');
+    } catch (e) {
+        showToast('Failed to update preset', 'error');
+    }
+};
+
+window.deletePresetRemote = async (presetId) => {
+    const uid = auth.currentUser?.uid;
+    if (!uid) return;
+    if (!confirm('Are you sure you want to delete this preset across all devices?')) return;
+    try {
+        const pDoc = doc(firestore, `users/${uid}/presets/${presetId}`);
+        await deleteDoc(pDoc);
+        showToast('Preset deleted', 'success');
+    } catch (e) {
+        showToast('Failed to delete preset', 'error');
+    }
+};
+
+window.openCreatePresetModal = () => {
+    showModal({
+        title: 'NEW BACKUP PRESET',
+        body: 'Enter preset name (e.g. WhatsApp Media):',
+        input: '',
+        btns: [
+            { label: 'Cancel', cls: 'modal-btn-cancel', action: closeModal },
+            { label: 'Create', cls: 'modal-btn-confirm', action: async () => {
+                const name = document.getElementById('modalInput')?.value.trim();
+                if (!name) return;
+                closeModal();
+                const uid = auth.currentUser?.uid;
+                if (!uid) return;
+                const pId = 'preset_' + Date.now();
+                const pDoc = doc(firestore, `users/${uid}/presets/${pId}`);
+                await setDoc(pDoc, {
+                    id: pId,
+                    name: name,
+                    enabled: true,
+                    folders: ['DCIM/Camera'],
+                    includeSubfolders: true,
+                    includeHidden: false,
+                    autoBackupNewFiles: true,
+                    networkType: 'WIFI_ONLY',
+                    fileTypes: ['IMAGE', 'VIDEO'],
+                    maxFileSizeMb: 100,
+                    unlimitedSize: false,
+                    requireCharging: false,
+                    targetCloudFolder: 'csm_drive',
+                    deleteLocalAfterUpload: false,
+                    filesBackedUpCount: 0,
+                    createdAt: Date.now()
+                });
+                showToast('Preset created', 'success');
+            }}
+        ]
+    });
+};
+
+/* ─── Audit Trail ────────────────────────────────────────────── */
+window.loadAuditLogs = async () => {
+    const uid = auth.currentUser?.uid;
+    if (!uid) return;
+    const listEl = document.getElementById('cpAuditList');
+    if (!listEl) return;
+
+    try {
+        const auditCol = collection(firestore, `users/${uid}/activity_logs`);
+        const q = query(auditCol, orderBy('timestamp', 'desc'), limit(25));
+        const snap = await getDocs(q);
+
+        if (snap.empty) {
+            listEl.innerHTML = '<div class="settings-row-sub">No audit log records found yet.</div>';
+            return;
+        }
+
+        let html = '';
+        snap.forEach(d => {
+            const log = d.data();
+            const dateStr = new Date(log.timestamp || Date.now()).toLocaleString();
+            html += `
+            <div class="history-item">
+                <div>
+                    <div><b style="color:var(--neon);">${escapeHtml(log.action || 'EVENT')}</b> — ${escapeHtml(log.details || '')}</div>
+                    <div style="color:var(--text-muted); font-size:0.7rem;">Device: ${escapeHtml(log.deviceId || 'System')} • ${dateStr}</div>
+                </div>
+            </div>`;
+        });
+        listEl.innerHTML = html;
+    } catch (e) {
+        listEl.innerHTML = `<div class="settings-row-sub">Error loading audit logs: ${escapeHtml(e.message)}</div>`;
+    }
+};
+
