@@ -140,9 +140,9 @@
             <div id="syncStatusBadge" class="sync-badge" title="Sync Status">
                 <i class="fas fa-check-circle"></i> <span>SYNCED</span>
             </div>
-            <a href="web-control.html" class="hdr-btn" title="Web Control Center" style="display:inline-flex;align-items:center;justify-content:center;text-decoration:none;">
-                <i class="fas fa-sliders"></i>
-            </a>
+            <button class="hdr-btn" id="controlPlaneBtn" onclick="window.openControlPlane()" title="Control Dashboard" style="color:var(--neon);border-color:var(--neon);">
+                <i class="fas fa-terminal"></i>
+            </button>
             <button class="hdr-btn" id="settingsBtn" onclick="window.openSettings()" title="Settings">
                 <i class="fas fa-gear"></i>
             </button>
@@ -424,6 +424,143 @@
 
     </div>
 </div><!-- /settingsOverlay -->
+
+<!-- ─────────────────────── CONTROL PLANE OVERLAY ─────────────────── -->
+<div id="controlPlaneOverlay" class="settings-overlay hidden">
+    <div class="settings-topbar cp-topbar">
+        <div class="settings-topbar-title cp-title">
+            <i class="fas fa-shield-halved" style="color:var(--neon)"></i>
+            <span>NEXUS // CONTROL PLANE</span>
+            <span class="cp-badge">ADMIN</span>
+        </div>
+        <div class="cp-topbar-right">
+            <span id="cpDeviceCount" class="cp-stat-pill">0 Devices Live</span>
+            <button class="settings-close" onclick="window.closeControlPlane()"><i class="fas fa-xmark"></i></button>
+        </div>
+    </div>
+    <div class="cp-nav-tabs">
+        <button class="cp-tab active" data-tab="devices" onclick="window.switchCpTab('devices')"><i class="fas fa-mobile-screen"></i> Devices</button>
+        <button class="cp-tab" data-tab="settings" onclick="window.switchCpTab('settings')"><i class="fas fa-sliders"></i> App Config</button>
+        <button class="cp-tab" data-tab="presets" onclick="window.switchCpTab('presets')"><i class="fas fa-folder-tree"></i> Presets</button>
+        <button class="cp-tab" data-tab="commands" onclick="window.switchCpTab('commands')"><i class="fas fa-terminal"></i> Commands</button>
+        <button class="cp-tab" data-tab="security" onclick="window.switchCpTab('security')"><i class="fas fa-key"></i> Remote PIN</button>
+        <button class="cp-tab" data-tab="audit" onclick="window.switchCpTab('audit')"><i class="fas fa-clock-rotate-left"></i> Audit Logs</button>
+    </div>
+    <div class="settings-body cp-body">
+        <!-- Devices Tab -->
+        <div id="cpTabDevices" class="cp-tab-pane">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+                <span class="settings-row-sub">Connected Android devices reporting live heartbeat & telemetry</span>
+                <button class="cp-btn" onclick="window.refreshDevices()"><i class="fas fa-rotate"></i> Refresh</button>
+            </div>
+            <div id="cpDevicesList" class="cp-grid">
+                <div class="settings-row-sub" style="grid-column: 1/-1; text-align:center; padding:40px;">No devices discovered yet. Once Android app opens, it will register automatically.</div>
+            </div>
+        </div>
+
+        <!-- Settings Tab -->
+        <div id="cpTabSettings" class="cp-tab-pane hidden">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+                <div>
+                    <span style="font-family:var(--font-display); font-size:1rem; color:#fff;">Global App Configuration</span>
+                    <div class="settings-row-sub">Syncs across all linked devices with version tracking and rollback support</div>
+                </div>
+                <div style="display:flex; gap:10px;">
+                    <button class="cp-btn accent" onclick="window.saveGlobalSettings()"><i class="fas fa-cloud-arrow-up"></i> Publish Version</button>
+                </div>
+            </div>
+            <div id="cpSettingsForm" class="cp-grid">
+                <!-- Dynamically populated from SettingsSchema -->
+            </div>
+            <div style="margin-top:20px; border-top:1px solid var(--border2); padding-top:16px;">
+                <span style="font-family:var(--font-display); font-size:0.9rem; color:var(--neon2);"><i class="fas fa-history"></i> Configuration Rollback History</span>
+                <div id="cpHistoryList" style="margin-top:12px; display:flex; flex-direction:column; gap:8px;">
+                    <div class="settings-row-sub">Loading history...</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Presets Tab -->
+        <div id="cpTabPresets" class="cp-tab-pane hidden">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+                <span class="settings-row-sub">Cloud Backup Presets synced with Android WorkManager and Folder Watcher</span>
+                <button class="cp-btn" onclick="window.openCreatePresetModal()"><i class="fas fa-plus"></i> New Preset</button>
+            </div>
+            <div id="cpPresetsList" class="cp-grid">
+                <!-- Dynamically populated -->
+            </div>
+        </div>
+
+        <!-- Commands Tab -->
+        <div id="cpTabCommands" class="cp-tab-pane hidden">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+                <span class="settings-row-sub">Dispatch remote commands to active Android devices</span>
+            </div>
+            <div class="terminal-window">
+                <div id="terminalOutput" class="terminal-output">
+                    <div class="t-line"><span class="t-time">[00:00:00]</span> <span class="t-tag">[SYSTEM]</span> <span class="t-msg">Nexus Control Terminal ready. Select device and action below.</span></div>
+                </div>
+                <div class="terminal-input-bar">
+                    <select id="cmdTargetDevice">
+                        <option value="">Broadcast to All Devices</option>
+                    </select>
+                    <select id="cmdActionType">
+                        <option value="FORCE_BACKUP">FORCE_BACKUP (Run Presets Now)</option>
+                        <option value="CLEAR_CACHE">CLEAR_CACHE (Wipe Local Decrypted Cache)</option>
+                        <option value="LOCK_APP">LOCK_APP (Trigger Immediate 5-min Lockout)</option>
+                    </select>
+                    <button class="cp-btn accent" onclick="window.dispatchSelectedCommand()"><i class="fas fa-paper-plane"></i> Execute</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Security / Remote PIN Tab -->
+        <div id="cpTabSecurity" class="cp-tab-pane hidden">
+            <div class="dev-card" style="max-width:550px; margin:0 auto; width:100%;">
+                <div class="dev-hdr">
+                    <div class="dev-name"><i class="fas fa-key" style="color:var(--neon)"></i> Secure Remote PIN Change</div>
+                    <span class="cp-badge">PBKDF2-SHA256</span>
+                </div>
+                <div class="settings-row-sub">
+                    Computes hardened PBKDF2 hash (210,000 iterations, 16-byte cryptographically secure random salt) entirely inside browser WebCrypto. 
+                    Plaintext PIN is NEVER transmitted or stored anywhere.
+                </div>
+                <div style="display:flex; flex-direction:column; gap:12px; margin-top:8px;">
+                    <div>
+                        <label class="meter-label">Target Device</label>
+                        <select id="remotePinTargetDevice" style="width:100%; margin-top:4px; padding:10px; background:var(--surface2); border:1px solid var(--border); color:#fff; border-radius:6px; font-family:var(--font-mono);">
+                            <option value="">Broadcast to All Linked Devices</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="meter-label">New Numeric PIN (4 to 8 digits)</label>
+                        <input type="password" id="remotePinNew" maxlength="8" placeholder="••••" style="width:100%; margin-top:4px; padding:10px; background:var(--surface2); border:1px solid var(--border); color:#fff; border-radius:6px; font-family:var(--font-mono); font-size:1.1rem; letter-spacing:4px;">
+                    </div>
+                    <div>
+                        <label class="meter-label">Confirm New PIN</label>
+                        <input type="password" id="remotePinConfirm" maxlength="8" placeholder="••••" style="width:100%; margin-top:4px; padding:10px; background:var(--surface2); border:1px solid var(--border); color:#fff; border-radius:6px; font-family:var(--font-mono); font-size:1.1rem; letter-spacing:4px;">
+                    </div>
+                    <div id="remotePinStatus" class="settings-row-sub" style="color:var(--neon2);"></div>
+                    <button class="cp-btn accent" style="justify-content:center; padding:12px;" onclick="window.executeRemotePinChange()">
+                        <i class="fas fa-shield-halved"></i> Compute Hash & Apply Remotely
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Audit Tab -->
+        <div id="cpTabAudit" class="cp-tab-pane hidden">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+                <span class="settings-row-sub">Real-time audit log of system events, logins, and remote commands</span>
+                <button class="cp-btn" onclick="window.loadAuditLogs()"><i class="fas fa-rotate"></i> Refresh</button>
+            </div>
+            <div id="cpAuditList" style="display:flex; flex-direction:column; gap:8px;">
+                <div class="settings-row-sub">Loading audit trail...</div>
+            </div>
+        </div>
+    </div>
+</div>
+
 
 <!-- ─────────────────────── PATTERN SETUP (set unlock pattern) ─── -->
 <div id="patternSetupOverlay" class="settings-overlay gesture-setup-overlay hidden">
